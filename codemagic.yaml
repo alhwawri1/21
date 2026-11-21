@@ -1,0 +1,70 @@
+workflows:
+  ios-unsigned-ipa:
+    name: Masareef Unsigned iOS IPA
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      node: 20
+      xcode: latest
+    scripts:
+      - name: Install Node dependencies & Capacitor iOS platform
+        script: |
+          npm install
+          if [ ! -d "ios/App" ]; then
+            npx cap add ios
+          else
+            npx cap sync ios
+          fi
+      - name: Install CocoaPods dependencies
+        script: |
+          cd ios/App && pod install --repo-update
+      - name: Build unsigned iOS .xcarchive and .ipa
+        script: |
+          set -e
+          APP_DIR="ios/App"
+          WORKSPACE="$APP_DIR/App.xcworkspace"
+          PROJECT="$APP_DIR/App.xcodeproj"
+          SCHEME="App"
+          ARCHIVE_PATH="$PWD/build/Masareef.xcarchive"
+          IPA_DIR="$PWD/build/ipa"
+          PAYLOAD_DIR="$IPA_DIR/Payload"
+
+          mkdir -p "$PAYLOAD_DIR"
+
+          if [ -d "$WORKSPACE" ]; then
+            xcodebuild archive \
+              -workspace "$WORKSPACE" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -archivePath "$ARCHIVE_PATH" \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              AD_HOC_CODE_SIGNING_ALLOWED=YES
+          else
+            xcodebuild archive \
+              -project "$PROJECT" \
+              -scheme "$SCHEME" \
+              -configuration Release \
+              -sdk iphoneos \
+              -archivePath "$ARCHIVE_PATH" \
+              CODE_SIGN_IDENTITY="" \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGNING_ALLOWED=NO \
+              AD_HOC_CODE_SIGNING_ALLOWED=YES
+          fi
+
+          APP_BUNDLE=$(find "$ARCHIVE_PATH/Products/Applications" -maxdepth 1 -name "*.app" | head -n 1)
+          if [ -z "$APP_BUNDLE" ]; then
+            echo "ERROR: .app bundle not found in archive"
+            exit 1
+          fi
+
+          cp -R "$APP_BUNDLE" "$PAYLOAD_DIR/"
+          (cd "$IPA_DIR" && zip -r -y "$PWD/../Masareef-unsigned.ipa" Payload)
+          ls -lh "$PWD/build/Masareef-unsigned.ipa"
+    artifacts:
+      - build/Masareef-unsigned.ipa
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
